@@ -25,6 +25,7 @@
 
 #include <ctime>
 #include <chrono>
+#include <sstream>
 #include "vector_ref.h"
 #include "Common.h"
 #include "CommonData.h"
@@ -114,19 +115,19 @@ public:
 	void append(h160 const& _t) { m_sstr << EthRed "@" << _t.abridged() << EthReset; }
 	void append(h256 const& _t) { m_sstr << EthWhite "#" << _t.abridged() << EthReset; }
 	void append(h512 const& _t) { m_sstr << EthTeal "##" << _t.abridged() << EthReset; }
-	void append(std::string const& _t) { m_sstr << EthGreen "\"" + _t + "\"" EthReset; }
+	void append(std::string const& _t) { m_sstr << EthGreen "\"" + _t + "\"" << EthReset; }
 	void append(bytes const& _t) { m_sstr << EthYellow "%" << toHex(_t) << EthReset; }
 	void append(bytesConstRef _t) { m_sstr << EthYellow "%" << toHex(_t) << EthReset; }
 	template <class T> void append(std::vector<T> const& _t)
 	{
-		m_sstr << EthWhite "[" EthReset;
+		m_sstr << EthWhite "[" << EthReset;
 		int n = 0;
 		for (auto const& i: _t)
 		{
-			m_sstr << (n++ ? EthWhite ", " EthReset : "");
+			m_sstr << (n++ ? EthWhite ", " : "") << EthReset;
 			append(i);
 		}
-		m_sstr << EthWhite "]" EthReset;
+		m_sstr << EthWhite "]" << EthReset;
 	}
 	template <class T> void append(std::set<T> const& _t)
 	{

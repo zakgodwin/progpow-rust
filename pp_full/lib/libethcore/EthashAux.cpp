@@ -19,6 +19,11 @@
 #include <libethash/internal.h>
 #include <libdevcore/SHA3.h>
 
+#ifndef BOOST_THROW_EXCEPTION
+#include <stdexcept>
+#define BOOST_THROW_EXCEPTION(x) throw x
+#endif
+
 using namespace std;
 using namespace chrono;
 using namespace dev;

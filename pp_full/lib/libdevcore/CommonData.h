@@ -29,6 +29,8 @@
 #include <type_traits>
 #include <cstring>
 #include <string>
+#include <sstream>
+#include <iomanip>
 #include "Common.h"
 
 namespace dev

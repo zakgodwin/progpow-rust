@@ -37,9 +37,9 @@ set(PROJECT_VERSION 0.15.0.dev0)
 #set(Boost_INCLUDE_DIR "3rdparty/boost_1_87_0/boost")
 #set(Boost_NO_SYSTEM_PATHS on CACHE BOOL "Do not search system for Boost" )
 
-#set(Boost_USE_STATIC_LIBS OFF) 
-#set(Boost_USE_MULTITHREADED ON)  
-#set(Boost_USE_STATIC_RUNTIME OFF) 
+#set(Boost_USE_STATIC_LIBS OFF)
+#set(Boost_USE_MULTITHREADED ON)
+#set(Boost_USE_STATIC_RUNTIME OFF)
 
 
 #set(Boost_NO_BOOST_CMAKE YES)
@@ -58,7 +58,8 @@ set(PROJECT_VERSION 0.15.0.dev0)
 #cmake_policy(SET CMP0020 NEW)
 
 # 3.1 and above
-cmake_policy(SET CMP0167 NEW)
+# CMP0167 requires CMake 3.27+, commenting out for compatibility with 3.23.5
+#cmake_policy(SET CMP0167 NEW)
 
 ######################################################################################################
 
@@ -90,8 +91,8 @@ endfunction()
 #find_package(skyr-url CONFIG REQUIRED)
 
 #if(Boost_FOUND)
-#    include_directories(${Boost_INCLUDE_DIRS}) 
-  #  add_executable(progname file1.cxx file2.cxx) 
+#    include_directories(${Boost_INCLUDE_DIRS})
+  #  add_executable(progname file1.cxx file2.cxx)
    # target_link_libraries(progname ${Boost_LIBRARIES})
 #endif()
 

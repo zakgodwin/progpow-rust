@@ -21,8 +21,8 @@ pub fn fail_on_empty_directory(name: &str) {
 fn generate_bindings(out_dir: &str) {
 	let bindings = bindgen::Builder::default()
 		.header("lib/libexternal/progpow.h")
-		.blacklist_type("max_align_t")
-		.blacklist_type("_bindgen_ty_1")
+		.blocklist_type("max_align_t")
+		.blocklist_type("_bindgen_ty_1")
 		.generate()
 		.expect("Unable to generate bindings");
 
@@ -45,6 +45,34 @@ fn compile_cmake() {
 		make.define("ETHASHCL", "ON");
 	} else {
 		make.define("ETHASHCL", "OFF");
+	}
+
+	// On Windows, help CMake find Boost
+	if cfg!(target_os = "windows") {
+		// Check common Boost locations on Windows
+		let boost_paths = vec![
+			"C:\\local\\boost_1_78_0",
+			"C:\\Boost",
+			"C:\\Program Files\\boost",
+		];
+
+		for path in &boost_paths {
+			if std::path::Path::new(path).exists() {
+				println!("cargo:warning=Found Boost at {}", path);
+				make.define("BOOST_ROOT", path);
+				make.define("BOOST_INCLUDEDIR", path);
+				make.define("Boost_NO_SYSTEM_PATHS", "ON");
+				break;
+			}
+		}
+
+		// Also check environment variables
+		if let Ok(boost_root) = env::var("BOOST_ROOT") {
+			println!("cargo:warning=Using BOOST_ROOT from environment: {}", boost_root);
+			make.define("BOOST_ROOT", &boost_root);
+			make.define("BOOST_INCLUDEDIR", &boost_root);
+			make.define("Boost_NO_SYSTEM_PATHS", "ON");
+		}
 	}
 
 	make.no_build_target(true).build();
@@ -91,10 +119,13 @@ fn main() {
 
 		if cfg!(feature = "cuda") {
 			println!(
-				"cargo:rustc-link-search={}/build/libethash-cl/{}",
+				"cargo:rustc-link-search={}/build/libethash-cuda/{}",
 				out_dir, target
 			);
 			println!("cargo:rustc-link-lib=ethash-cuda");
+			println!("cargo:rustc-link-lib=cudart");
+			println!("cargo:rustc-link-lib=cuda");
+			println!("cargo:rustc-link-lib=nvrtc");
 		}
 
 		println!(
@@ -122,6 +153,14 @@ fn main() {
 			out_dir, target
 		);
 		println!("cargo:rustc-link-lib=ppow");
+
+		// Add CUDA lib path for OpenCL
+		if let Ok(cuda_path) = env::var("CUDA_PATH") {
+			println!("cargo:rustc-link-search={}/lib/x64", cuda_path);
+		} else {
+			println!("cargo:rustc-link-search=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.1/lib/x64");
+		}
+
 		println!("cargo:rustc-link-lib=OpenCL");
 	} else {
 		println!("cargo:rustc-link-search={}/build/libexternal", out_dir);
