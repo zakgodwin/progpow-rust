@@ -77,6 +77,13 @@ __device__ __forceinline__ uint32_t cuda_swab32(const uint32_t x)
     return __byte_perm(x, x, 0x0123);
 }
 
+__device__ __forceinline__ uint64_t cuda_swab64(const uint64_t x)
+{
+    uint32_t lo = (uint32_t)x;
+    uint32_t hi = (uint32_t)(x >> 32);
+    return ((uint64_t)cuda_swab32(lo) << 32) | cuda_swab32(hi);
+}
+
 // Keccak - implemented as a variant of SHAKE
 // The width is 800, with a bitrate of 576, a capacity of 224, and no padding
 // Only need 64 bits of output for mining
@@ -137,7 +144,7 @@ __device__ __forceinline__ void fill_mix(uint64_t seed, uint32_t lane_id, uint32
         mix[i] = kiss99(st);
 }
 
-__global__ void 
+__global__ void
 progpow_search(
     uint64_t start_nonce,
     const hash32_t header,
@@ -149,7 +156,8 @@ progpow_search(
 {
     __shared__ uint32_t c_dag[PROGPOW_CACHE_WORDS];
     uint32_t const gid = blockIdx.x * blockDim.x + threadIdx.x;
-    uint64_t const nonce = start_nonce + gid;
+    uint64_t const nonce_le = start_nonce + gid;
+    uint64_t const nonce = cuda_swab64(nonce_le);
 
     const uint32_t lane_id = threadIdx.x & (PROGPOW_LANES - 1);
 

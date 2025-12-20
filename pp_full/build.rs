@@ -73,6 +73,15 @@ fn compile_cmake() {
 			make.define("BOOST_INCLUDEDIR", &boost_root);
 			make.define("Boost_NO_SYSTEM_PATHS", "ON");
 		}
+
+		// Add OpenCL include path for Windows
+		if cfg!(feature = "opencl") {
+			let opencl_include = "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.1\\include";
+			if std::path::Path::new(opencl_include).exists() {
+				println!("cargo:warning=Adding OpenCL include path: {}", opencl_include);
+				make.cxxflag(format!("/I\"{}\"", opencl_include));
+			}
+		}
 	}
 
 	make.no_build_target(true).build();

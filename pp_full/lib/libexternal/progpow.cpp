@@ -6,7 +6,8 @@
 #define MAX_MINERS 4
 
 using namespace dev;
-using namespace eth;
+// using namespace eth; // Fix for missing namespace error
+using namespace dev::eth;
 
 #define DRIVER_CUDA 1
 #define DRIVER_OCL  2

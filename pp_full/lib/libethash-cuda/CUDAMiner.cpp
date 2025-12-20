@@ -136,6 +136,7 @@ void CUDAMiner::compute(const void* header, uint64_t height, int epoch, uint64_t
 				uint64_t dagBytes = ethash_get_datasize(height);
 				uint32_t dagElms  = (unsigned)(dagBytes / (PROGPOW_LANES * PROGPOW_DAG_LOADS * 4));
 				compileKernel(height, dagElms);
+				cudalog << "Kernel compiled.";
 			}
 
 			current.epoch = epoch;
@@ -143,6 +144,7 @@ void CUDAMiner::compute(const void* header, uint64_t height, int epoch, uint64_t
 
 		current.header = new h256 { (const uint8_t*)header, h256::ConstructFromPointer };
 
+		//cudalog << "Calling search...";
 		search(current.header->data(), target, false, startNonce);
 	}
 	catch (cuda_runtime_error const& _e)
@@ -375,14 +377,12 @@ bool CUDAMiner::cuda_init(
 
 		//cudalog << "Using device: " << device_props.name << " (Compute " + to_string(device_props.major) + "." + to_string(device_props.minor) + ")";
 
-		m_search_buf = new volatile search_results *[s_numStreams];
-		m_streams = new cudaStream_t[s_numStreams];
-
 		uint64_t dagBytes = ethash_get_datasize(_light->block_number);
 		uint32_t dagElms   = (unsigned)(dagBytes / (PROGPOW_LANES * PROGPOW_DAG_LOADS * 4));
 		uint32_t lightWords = (unsigned)(_lightBytes / sizeof(node));
 
 		CUDA_SAFE_CALL(cudaSetDevice(m_device_num));
+		CUDA_SAFE_CALL(cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync));
 		//cudalog << "Set Device to current";
 
 		hash64_t** data = m_light->data();
@@ -423,6 +423,9 @@ bool CUDAMiner::cuda_init(
 
 		if(dagElms != m_dag_elms || !dag)
 		{
+			m_search_buf = new volatile search_results *[s_numStreams];
+			m_streams = new cudaStream_t[s_numStreams];
+
 			// create mining buffers
 			//cudalog << "Generating mining buffers";
 			for (unsigned i = 0; i != s_numStreams; ++i)
@@ -516,7 +519,15 @@ void CUDAMiner::compileKernel(
 	NVRTC_SAFE_CALL(nvrtcAddNameExpression(prog, name));
 	cudaDeviceProp device_props;
 	CUDA_SAFE_CALL(cudaGetDeviceProperties(&device_props, m_device_num));
-	std::string op_arch = "--gpu-architecture=compute_" + to_string(device_props.major) + to_string(device_props.minor);
+
+	// Cap architecture at 9.0 to avoid JIT issues with newer architectures (e.g. sm_100/sm_120)
+	int major = device_props.major;
+	int minor = device_props.minor;
+	if (major >= 10) {
+		major = 9;
+		minor = 0;
+	}
+	std::string op_arch = "--gpu-architecture=compute_" + to_string(major) + to_string(minor);
 	std::string op_dag = "-DPROGPOW_DAG_ELEMENTS=" + to_string(dag_elms);
 
 	const char *opts[] = {
@@ -571,12 +582,16 @@ void CUDAMiner::compileKernel(
 	delete[] jitErr;
 	// Find the mangled name
 	const char* mangledName;
+	cudalog << "Getting lowered name for: " << name;
 	NVRTC_SAFE_CALL(nvrtcGetLoweredName(prog, name, &mangledName));
-	//cudalog << "Mangled name: " << mangledName;
+	cudalog << "Mangled name: " << mangledName;
+	cudalog << "Getting function handle...";
 	CU_SAFE_CALL(cuModuleGetFunction(&m_kernel, m_module, mangledName));
-	//cudalog << "done compiling";
+	cudalog << "done compiling";
 	// Destroy the program.
+	cudalog << "Destroying program...";
 	NVRTC_SAFE_CALL(nvrtcDestroyProgram(&prog));
+	cudalog << "Program destroyed.";
 }
 
 void CUDAMiner::search(
@@ -585,17 +600,24 @@ void CUDAMiner::search(
 	bool _ethStratum,
 	uint64_t _startN)
 {
+	CUDA_SAFE_CALL(cudaSetDevice(m_device_num));
+	//cudalog << "Inside search...";
 	bool initialize = false;
 	if (memcmp(&m_current_header, header, sizeof(hash32_t)))
 	{
-		m_current_header = *reinterpret_cast<hash32_t const *>(header);
+		cudalog << "Header changed, initializing...";
+		//m_current_header = *reinterpret_cast<hash32_t const *>(header);
+		memcpy(&m_current_header, header, sizeof(hash32_t));
+		cudalog << "Header updated.";
 		initialize = true;
 	}
+	//cudalog << "Checking target...";
 	if (m_current_target != target)
 	{
 		m_current_target = target;
 		initialize = true;
 	}
+	//cudalog << "Target checked. Checking ethStratum...";
 	if (_ethStratum)
 	{
 		if (initialize)
@@ -615,19 +637,34 @@ void CUDAMiner::search(
 	}
 	else
 	{
+		//cudalog << "Not ethStratum. Checking initialize...";
 		if (initialize)
 		{
+			cudalog << "Initializing search state...";
 			m_current_nonce = 0;//get_start_nonce();
 			m_current_index = 0;
+			cudalog << "Syncing device...";
 			CUDA_SAFE_CALL(cudaDeviceSynchronize());
-			for (unsigned int i = 0; i < s_numStreams; i++)
-				m_search_buf[i]->count = 0;
+			cudalog << "Device synced. Resetting buffers...";
+			for (unsigned int i = 0; i < s_numStreams; i++) {
+				if (m_search_buf[i] == nullptr) {
+					cudalog << "Buffer " << i << " is null!";
+				} else {
+					m_search_buf[i]->count = 0;
+				}
+			}
+			cudalog << "Buffers reset.";
 		}
 	}
 	const uint32_t batch_size = s_gridSize * s_blockSize;
 
 	m_current_index++;
 	m_current_nonce += batch_size;
+
+	if (m_current_index % 20 == 0) {
+		cudalog << "Mining... Nonce: " << m_current_nonce << " Index: " << m_current_index;
+	}
+
 	auto stream_index = m_current_index % s_numStreams;
 	cudaStream_t stream = m_streams[stream_index];
 	volatile search_results* buffer = m_search_buf[stream_index];
@@ -637,7 +674,9 @@ void CUDAMiner::search(
 	uint64_t nonce_base = m_current_nonce - s_numStreams * batch_size;
 	if (m_current_index >= s_numStreams)
 	{
+		//cudalog << "Syncing stream...";
 		CUDA_SAFE_CALL(cudaStreamSynchronize(stream));
+		//cudalog << "Stream synced.";
 		found_count = buffer->count;
 		if (found_count) {
 			buffer->count = 0;
@@ -651,12 +690,14 @@ void CUDAMiner::search(
 	}
 	bool hack_false = false;
 	void *args[] = {&m_current_nonce, &m_current_header, &m_current_target, &m_dag, &buffer, &hack_false};
+	//cudalog << "Launching kernel...";
 	CU_SAFE_CALL(cuLaunchKernel(m_kernel,
 		s_gridSize, 1, 1,   // grid dim
 		s_blockSize, 1, 1,  // block dim
 		0,					// shared mem
 		stream,				// stream
 		args, 0));          // arguments
+	//cudalog << "Kernel launched.";
 
 	//printf("cuda index: %lu", m_current_nonce);
 	if (m_current_index >= s_numStreams)

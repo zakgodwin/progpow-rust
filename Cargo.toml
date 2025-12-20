@@ -19,18 +19,11 @@ bindgen = "0.71.1"
 cmake = "0.1.54"
 filetime = "0.2.25"
 
-[dependencies.progpow_gpu_cuda]
+[dependencies.progpow_gpu]
 package = "progpow_gpu"
 path = "./pp_full"
-features = ['cuda']
-optional = true
-
-[dependencies.progpow_gpu_opencl]
-package = "progpow_gpu"
-path = "./pp_full"
-features = ['opencl']
 optional = true
 
 [features]
-opencl = ["progpow_gpu_opencl"]
-cuda = ["progpow_gpu_cuda"]
+opencl = ["progpow_gpu", "progpow_gpu/opencl"]
+cuda = ["progpow_gpu", "progpow_gpu/cuda"]

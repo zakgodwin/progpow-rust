@@ -44,13 +44,20 @@ list(APPEND CUDA_NVCC_FLAGS_DEBUG -G)
 if(COMPUTE AND (COMPUTE GREATER 0))
 	list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_${COMPUTE},code=sm_${COMPUTE}")
 else()
-	# Target Blackwell (100), Hopper (90), and Ada (89) architectures
+	# Target a wide range of architectures for compatibility
 	set(
 		CUDA_NVCC_FLAGS
 		${CUDA_NVCC_FLAGS}
+		"-gencode arch=compute_80,code=sm_80"
+		"-gencode arch=compute_86,code=sm_86"
+		"-gencode arch=compute_75,code=sm_75"
+		"-gencode arch=compute_80,code=sm_80"
+		"-gencode arch=compute_86,code=sm_86"
 		"-gencode arch=compute_89,code=sm_89"
 		"-gencode arch=compute_90,code=sm_90"
 		"-gencode arch=compute_100,code=sm_100"
+		"-gencode arch=compute_120,code=sm_120"
+		"-gencode arch=compute_80,code=compute_80"
 	)
 endif()
 
