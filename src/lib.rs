@@ -1,16 +1,3 @@
-extern crate libc;
-#[macro_use]
-extern crate lazy_static;
-extern crate num_bigint; // Replace bigint with num_bigint
-extern crate dirs;
-
-//extern crate progpow_cpu;
-
-#[cfg(feature = "cuda")]
-extern crate progpow_gpu_cuda as progpow_gpu;
-#[cfg(feature = "opencl")]
-extern crate progpow_gpu_opencl as progpow_gpu;
-
 pub mod hardware;
 pub mod types;
 
@@ -18,8 +5,8 @@ pub mod types;
 mod test {
     use super::*;
 
-    use num_bigint::BigUint; // Import BigUint from num_bigint
-    use num_traits::{One, Zero}; // For utility methods like max_value and division
+    use num_bigint::BigUint;
+    use num_traits::{One, Zero};
     use hardware::PpCPU;
     use types::PpCompute;
 
@@ -29,7 +16,7 @@ mod test {
         let nonce: u64 = 10123012301;
         let header_hash: [u8; 32] = [0; 32];
         let pp_cpu = PpCPU::new();
-        let (value, mix) = pp_cpu.verify(&header_hash, height, nonce).unwrap();
+        let (_, mix) = pp_cpu.verify(&header_hash, height, nonce).unwrap();
         assert_eq!(
             mix,
             [
@@ -40,7 +27,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "gpu")]
+    #[cfg(any(feature = "cuda", feature = "opencl"))]
     fn test_compute_gpu() {
         use hardware::PpGPU;
         use progpow_gpu::utils::get_gpu_solution;
@@ -64,3 +51,4 @@ mod test {
         assert!(((value[0] as u64) << 32 | value[1] as u64) < target.to_u64_digits()[0]);
     }
 }
+

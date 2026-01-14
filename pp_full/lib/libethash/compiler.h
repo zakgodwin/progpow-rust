@@ -26,7 +26,7 @@
 
 // pretend restrict is a standard keyword
 #if defined(_MSC_VER)
-#define restrict __restrict
+//#define restrict __restrict
 #else
 #define restrict __restrict__
 #endif

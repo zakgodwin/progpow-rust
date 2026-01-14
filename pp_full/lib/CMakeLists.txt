@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.18)
 
 include_directories(/usr/local/cuda/include /opt/cuda/include)
 
@@ -30,6 +30,7 @@ include_directories(/usr/local/cuda/include /opt/cuda/include)
 # Example: cmake -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake ..
 # Uncomment and set the following line if you want to hardcode a default (not recommended):
 # set(CMAKE_TOOLCHAIN_FILE "/absolute/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake")
+set(CMAKE_SYSTEM_VERSION "10.0.19041.0" CACHE STRING "Windows SDK version" FORCE)
 project(progpow)
 set(PROJECT_VERSION 0.15.0.dev0)
 
@@ -37,9 +38,9 @@ set(PROJECT_VERSION 0.15.0.dev0)
 #set(Boost_INCLUDE_DIR "3rdparty/boost_1_87_0/boost")
 #set(Boost_NO_SYSTEM_PATHS on CACHE BOOL "Do not search system for Boost" )
 
-#set(Boost_USE_STATIC_LIBS OFF) 
-#set(Boost_USE_MULTITHREADED ON)  
-#set(Boost_USE_STATIC_RUNTIME OFF) 
+#set(Boost_USE_STATIC_LIBS OFF)
+#set(Boost_USE_MULTITHREADED ON)
+#set(Boost_USE_STATIC_RUNTIME OFF)
 
 
 #set(Boost_NO_BOOST_CMAKE YES)
@@ -58,7 +59,7 @@ set(PROJECT_VERSION 0.15.0.dev0)
 #cmake_policy(SET CMP0020 NEW)
 
 # 3.1 and above
-cmake_policy(SET CMP0167 NEW)
+#cmake_policy(SET CMP0167 NEW)
 
 ######################################################################################################
 
@@ -90,8 +91,8 @@ endfunction()
 #find_package(skyr-url CONFIG REQUIRED)
 
 #if(Boost_FOUND)
-#    include_directories(${Boost_INCLUDE_DIRS}) 
-  #  add_executable(progname file1.cxx file2.cxx) 
+#    include_directories(${Boost_INCLUDE_DIRS})
+  #  add_executable(progname file1.cxx file2.cxx)
    # target_link_libraries(progname ${Boost_LIBRARIES})
 #endif()
 

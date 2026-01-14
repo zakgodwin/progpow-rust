@@ -1,4 +1,5 @@
 #include <iostream>
+#include <libdevcore/Common.h>
 #include "./progpow.h"
 
 #define ERROR_NOT_GPU "Isn't possible found a GPU"
@@ -56,7 +57,7 @@ extern "C" {
 
         #if ETH_ETHASHCL
             cl_configure(devicesCount, m_dagLoadMode, m_dagCreateDevice);
-        #endif 
+        #endif
 
         #if ETH_ETHASHCUDA
         unsigned m_cudaDeviceCount = devicesCount;
@@ -125,7 +126,7 @@ extern "C" {
         if (miner == NULL){
             exit(1);
         }
-        
+
         return ((Miner*) miner)->get_solutions(data);
     }
 

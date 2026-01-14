@@ -21,8 +21,8 @@ pub fn fail_on_empty_directory(name: &str) {
 fn generate_bindings(out_dir: &str) {
 	let bindings = bindgen::Builder::default()
 		.header("lib/libexternal/progpow.h")
-		.blacklist_type("max_align_t")
-		.blacklist_type("_bindgen_ty_1")
+		.blocklist_type("max_align_t")
+		.blocklist_type("_bindgen_ty_1")
 		.generate()
 		.expect("Unable to generate bindings");
 
@@ -47,7 +47,14 @@ fn compile_cmake() {
 		make.define("ETHASHCL", "OFF");
 	}
 
-	make.no_build_target(true).build();
+	// Force Release mode with explicit compiler flags to disable /GL (LTCG)
+	//if cfg!(target_env = "msvc") {
+	//	make.profile("Release");
+	//	make.define("CMAKE_CXX_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
+	//	make.define("CMAKE_C_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
+	//}
+
+	make.build_target("ppow_progpow").build();
 }
 
 fn exec_if_newer<F: Fn()>(inpath: &str, outpath: &str, build: F) {
@@ -91,10 +98,11 @@ fn main() {
 
 		if cfg!(feature = "cuda") {
 			println!(
-				"cargo:rustc-link-search={}/build/libethash-cl/{}",
+				"cargo:rustc-link-search={}/build/libethash-cuda/{}",
 				out_dir, target
 			);
 			println!("cargo:rustc-link-lib=ethash-cuda");
+			println!("cargo:rustc-link-lib=ethash-cuda-device");
 		}
 
 		println!(
@@ -121,10 +129,12 @@ fn main() {
 			"cargo:rustc-link-search={}/build/libexternal/{}",
 			out_dir, target
 		);
-		println!("cargo:rustc-link-lib=ppow");
+		println!("cargo:rustc-link-lib=static=ppow_progpow");
 		println!("cargo:rustc-link-lib=OpenCL");
 	} else {
 		println!("cargo:rustc-link-search={}/build/libexternal", out_dir);
-		println!("cargo:rustc-link-lib=ppow");
+		println!("cargo:rustc-link-lib=static=ppow_progpow");
 	}
 }
+
+

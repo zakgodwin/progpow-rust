@@ -361,3 +361,4 @@ unsafe fn initialize_memory(memory: *mut Node, num_nodes: usize, ident: &H256) {
 		}
 	}
 }
+

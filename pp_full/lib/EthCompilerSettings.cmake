@@ -36,15 +36,24 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 	# disable conversion from 'size_t' to 'type', possible loss of data (C4267)
 	# disable C++ exception specification ignored except to indicate a function is not __declspec(nothrow) (C4290)
 	# disable decorated name length exceeded, name was truncated (C4503)
-	add_compile_options(/MP /EHsc /GL /wd4267 /wd4290 /wd4503)
+	# add_compile_options(/MP /EHsc /GL /wd4267 /wd4290 /wd4503)
+	# add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/MP;/EHsc;/GL;/wd4267;/wd4290;/wd4503>)
+	add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:/MP>
+    $<$<COMPILE_LANGUAGE:CXX>:/EHsc>
+    # $<$<COMPILE_LANGUAGE:CXX>:/GL>
+    $<$<COMPILE_LANGUAGE:CXX>:/wd4267>
+    $<$<COMPILE_LANGUAGE:CXX>:/wd4290>
+    $<$<COMPILE_LANGUAGE:CXX>:/wd4503>
+	)
 
 	# enable LTCG for faster builds
-	set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG")
+	# set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG")
 
 	# enable LTCG for faster builds
 	# enable unused references removal
 	# enable RELEASE so that the executable file has its checksum set
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LTCG /OPT:REF /OPT:ICF /RELEASE")
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /OPT:REF /OPT:ICF /RELEASE")
 else ()
 	message(WARNING "Your compiler is not tested, if you run into any issues, we'd welcome any patches.")
 endif ()

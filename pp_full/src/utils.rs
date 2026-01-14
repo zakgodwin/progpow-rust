@@ -19,3 +19,4 @@ pub fn get_gpu_solution(header: [u8; 32], height: u64, epoch: i32, target: u64) 
 		}
 	}
 }
+

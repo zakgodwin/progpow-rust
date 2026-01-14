@@ -10,10 +10,13 @@ bigint = "4.4.1"
 
 [build-dependencies]
 bindgen = "0.71.1"
-cmake = "0.1.52"
+cmake = "0.1.50"
 filetime = "0.2"
 
 [features]
 default = []
 cuda = []
 opencl = []
+
+
+

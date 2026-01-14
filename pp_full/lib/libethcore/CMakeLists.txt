@@ -7,7 +7,14 @@ set(SOURCES
 
 include_directories(BEFORE ..)
 
+find_package(Boost REQUIRED)
+
 add_library(ethcore ${SOURCES})
+target_include_directories(ethcore PUBLIC ${Boost_INCLUDE_DIRS})
+if(Boost_LIBRARIES)
+    target_link_libraries(ethcore PRIVATE ${Boost_LIBRARIES})
+endif()
+
 target_link_libraries(ethcore ethash devcore)
 
 if(ETHASHCL)
