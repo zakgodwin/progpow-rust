@@ -47,12 +47,34 @@ fn compile_cmake() {
 		make.define("ETHASHCL", "OFF");
 	}
 
-	// Force Release mode with explicit compiler flags to disable /GL (LTCG)
-	//if cfg!(target_env = "msvc") {
-	//	make.profile("Release");
-	//	make.define("CMAKE_CXX_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
-	//	make.define("CMAKE_C_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
-	//}
+	// MSVC Runtime Configuration:
+	// Rust always links against the release C runtime (/MD) even in debug builds.
+	// C++ code MUST also use /MD (not /MDd) to avoid linker errors.
+	// We still get debug symbols (/Zi) and can debug, but lose some C runtime debug checks.
+	//
+	// /GL (Link Time Code Generation) is DISABLED because it's incompatible with Rust's
+	// FFI expectations. LTCG changes calling conventions and can break extern "C" boundaries.
+	//
+	// Profile detection handles custom cargo profiles (bench, dev, etc.) by treating
+	// anything non-release as debug for CMake purposes.
+	if cfg!(target_env = "msvc") {
+		let profile = env::var("PROFILE").unwrap_or_else(|_| String::from("debug"));
+
+		// Treat "release" as Release, everything else (debug, dev, test, bench) as Debug
+		let is_release = profile == "release" || profile == "release-with-debug";
+
+		if is_release {
+			make.profile("Release");
+			// Release: Full optimization, no debug symbols, always /MD runtime
+			make.define("CMAKE_CXX_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
+			make.define("CMAKE_C_FLAGS_RELEASE", "/MD /O2 /Ob2 /DNDEBUG /GL-");
+		} else {
+			make.profile("Debug");
+			// Debug: No optimization, debug symbols, but STILL /MD (not /MDd) for Rust compatibility
+			make.define("CMAKE_CXX_FLAGS_DEBUG", "/MD /Zi /Ob0 /Od /RTC1 /GL-");
+			make.define("CMAKE_C_FLAGS_DEBUG", "/MD /Zi /Ob0 /Od /RTC1 /GL-");
+		}
+	}
 
 	make.build_target("ppow_progpow").build();
 }

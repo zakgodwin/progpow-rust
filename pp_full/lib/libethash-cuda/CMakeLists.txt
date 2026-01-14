@@ -1,10 +1,6 @@
 # Modern CMake CUDA library configuration for CUDA 13.1+ and Visual Studio 2022
+# Requires CMake 3.18+ for first-class CUDA support
 cmake_minimum_required(VERSION 3.18)
-
-# Force Release mode for CUDA compilation (avoid debug runtime issues)
-if(NOT CMAKE_BUILD_TYPE)
-	set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
 
 # Enable CUDA language support
 enable_language(CUDA)
@@ -13,8 +9,21 @@ enable_language(CUDA)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# CUDA architectures for CUDA 13.1 (sm_75 Turing through sm_120 Blackwell)
-set(CMAKE_CUDA_ARCHITECTURES "75;80;86;89;90;120")
+# CUDA Target Architectures (compute capabilities):
+# Mining performance is architecture-specific, so we compile for modern GPUs only.
+# Older architectures fall back to OpenCL/WGPU for broader compatibility.
+#
+# sm_86  = Ampere (RTX 30-series: 3060, 3070, 3080, 3090)
+# sm_89  = Ada Lovelace (RTX 40-series: 4060, 4070, 4080, 4090)
+# sm_90  = Hopper (H100 datacenter GPUs)
+# sm_120 = Blackwell (RTX 50-series and B-series datacenter - RTX 5090, etc.)
+#
+# Excluded older architectures to reduce build time (15+ min → ~3-5 min):
+# - sm_61 (Pascal: GTX 1060/1070/1080) - Use for Linux test rig, covered by OpenCL
+# - sm_75 (Turing: RTX 20-series) - Less common in mining, OpenCL fallback available
+#
+# --threads 0 = Use all available CPU threads for parallel CUDA compilation
+set(CMAKE_CUDA_ARCHITECTURES "86;89;90;120")
 
 # Generate CUDA kernel header file
 add_custom_command(
@@ -58,13 +67,19 @@ set_target_properties(ethash-cuda-device PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 )
 
-if(MSVC)
-	string(REPLACE "/MP" "" CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS}")
-	set_target_properties(ethash-cuda-device PROPERTIES VS_GLOBAL_UseMultiToolTask "false")
-endif()
+# Note: We do NOT disable parallel compilation here.
+# The --threads 0 flag in target_compile_options enables parallel CUDA compilation.
+# VS_GLOBAL_UseMultiToolTask would conflict with --threads 0, so we let NVCC handle it.
 
 target_compile_options(ethash-cuda-device PRIVATE
-	$<$<COMPILE_LANGUAGE:CUDA>: --use_fast_math --expt-relaxed-constexpr -Xcompiler=/MD -Xcompiler=/W3 -Xcompiler=/wd4819 >
+	# CUDA compiler options:
+	# --use_fast_math = Aggressive floating-point optimizations for mining performance
+	# --expt-relaxed-constexpr = Allow constexpr in device code
+	# --threads 0 = Parallel compilation using all CPU threads (reduces build time significantly)
+	# -Xcompiler=/MD = Pass /MD to host C++ compiler (matches Rust runtime, set here for CUDA-specific build)
+	# -Xcompiler=/W3 = Warning level 3
+	# -Xcompiler=/wd4819 = Disable codepage warnings on Asian locale systems
+	$<$<COMPILE_LANGUAGE:CUDA>: --use_fast_math --expt-relaxed-constexpr --threads 0 -Xcompiler=/MD -Xcompiler=/W3 -Xcompiler=/wd4819 >
 )
 
 # --- Host Library (C++) ---
@@ -84,5 +99,7 @@ target_link_libraries(ethash-cuda
 )
 
 if(MSVC)
-	target_compile_options(ethash-cuda PRIVATE /MD /W3)
+	# Runtime library flag (/MD) is set in build.rs for consistency.
+	# We only set warning level here.
+	target_compile_options(ethash-cuda PRIVATE /W3)
 endif()
