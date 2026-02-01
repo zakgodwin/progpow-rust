@@ -82,7 +82,7 @@ macro_rules! static_assert_size_eq {
 	};
 	(@inner $a:ty, $b:ty) => {
 		unsafe {
-			let val: $b = ::std::mem::uninitialized();
+			let val: $b = ::std::mem::zeroed();
 			let _: $a = ::std::mem::transmute(val);
 		}
 	};
@@ -152,4 +152,3 @@ impl Node {
 		unsafe { &mut self.dwords }
 	}
 }
-

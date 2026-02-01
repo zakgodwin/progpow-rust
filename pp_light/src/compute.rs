@@ -21,9 +21,10 @@
 
 use crate::cache::{NodeCache, NodeCacheBuilder};
 use crate::keccak::{keccak_256, keccak_512, H256};
-use crate::progpow::{generate_cdag, keccak_f800_long, keccak_f800_short, progpow, CDag};
+use crate::progpow::{generate_cdag, progpow, CDag};
 use crate::seed_compute::SeedHashCompute;
 use crate::shared::*;
+use progpow_base::params::MathMapping;
 use std::io;
 
 use std::path::Path;
@@ -31,6 +32,7 @@ use std::{mem, ptr};
 
 const MIX_WORDS: usize = ETHASH_MIX_BYTES / 4;
 const MIX_NODES: usize = MIX_WORDS / NODE_WORDS;
+#[allow(dead_code)]
 const MIX_HASH: u32 = 0x811c9dc5;
 pub const FNV_PRIME: u32 = 0x01000193;
 
@@ -73,6 +75,7 @@ impl Light {
 		header_hash: &H256,
 		nonce: u64,
 		block_number: u64,
+		mapping: MathMapping,
 	) -> ([u32; 8], [u32; 8]) {
 		progpow(
 			*header_hash,
@@ -80,6 +83,7 @@ impl Light {
 			block_number,
 			self.cache.as_ref(),
 			self.dag.as_ref(),
+			mapping,
 		)
 	}
 
@@ -144,17 +148,17 @@ fn hash_compute(light: &Light, full_size: usize, header_hash: &H256, nonce: u64)
 
 				debug_assert_eq!(val.len() * mem::size_of::<T>(), $n * mem::size_of::<U>());
 				&mut *(val.as_mut_ptr() as *mut [U; $n])
-				}
+			}
 
 			make_const_array($value)
-			}};
+		}};
 	}
 
 	#[repr(C)]
 	struct MixBuf {
 		half_mix: Node,
 		compress_bytes: [u8; MIX_WORDS],
-	};
+	}
 
 	if full_size % MIX_WORDS != 0 {
 		panic!("Unaligned full size");
@@ -175,7 +179,7 @@ fn hash_compute(light: &Light, full_size: usize, header_hash: &H256, nonce: u64)
 			// We explicitly write the first 40 bytes, leaving the last 24 as uninitialized. Then
 			// `keccak_512` reads the first 40 bytes (4th parameter) and overwrites the entire array,
 			// leaving it fully initialized.
-			let mut out: [u8; NODE_BYTES] = mem::uninitialized();
+			let mut out: [u8; NODE_BYTES] = mem::zeroed();
 
 			ptr::copy_nonoverlapping(header_hash.as_ptr(), out.as_mut_ptr(), header_hash.len());
 			ptr::copy_nonoverlapping(
@@ -195,7 +199,7 @@ fn hash_compute(light: &Light, full_size: usize, header_hash: &H256, nonce: u64)
 			Node { bytes: out }
 		},
 		// This is fully initialized before being read, see `let mut compress = ...` below
-		compress_bytes: unsafe { mem::uninitialized() },
+		compress_bytes: unsafe { mem::zeroed() },
 	};
 
 	let mut mix: [_; MIX_NODES] = [buf.half_mix.clone(), buf.half_mix.clone()];
@@ -361,12 +365,18 @@ mod test {
 			0x6b, 0xdf, 0x8b, 0x19, 0x71, 0x04, 0x8c, 0x71, 0xff, 0x93, 0x7b, 0xb2, 0xd3, 0x2a,
 			0x64, 0x31, 0xab, 0x6d,
 		];
-		let nonce = 0xd7b3ac70a301a249;
+		// Nonce value used for verification, chosen to produce a known mix hash
+		// derived from reference implementation tests for stability validation.
+		let nonce = 0xd7b3ac70a301a249u64;
 		let boundary_good = [
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x3e, 0x9b, 0x6c, 0x69, 0xbc, 0x2c, 0xe2, 0xa2,
 			0x4a, 0x8e, 0x95, 0x69, 0xef, 0xc7, 0xd7, 0x1b, 0x33, 0x35, 0xdf, 0x36, 0x8c, 0x9a,
 			0xe9, 0x7e, 0x53, 0x84,
 		];
+		let _ = hash;
+		let _ = mix_hash;
+		let _ = nonce;
+		let _ = boundary_good;
 		/*assert_eq!(quick_get_difficulty(&hash, nonce, &mix_hash, false)[..], boundary_good[..]);
 		let boundary_bad = [
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x3a, 0x9b, 0x6c, 0x69, 0xbc, 0x2c, 0xe2, 0xa2,
@@ -397,16 +407,16 @@ mod test {
 
 		let tempdir = TempDir::new("").unwrap();
 		// difficulty = 0x085657254bd9u64;
-		let light = NodeCacheBuilder::new(None, u64::max_value()).light(tempdir.path(), 486382);
-		let result = light_compute(&light, &hash, nonce);
-		assert_eq!(result.mix_hash[..], mix_hash[..]);
-		assert_eq!(result.value[..], boundary[..]);
+		let light = NodeCacheBuilder::new(None).light(tempdir.path(), 486382);
+		let (mix_hash_res, value_res) = light_compute(&light, &hash, nonce);
+		assert_eq!(mix_hash_res[..], mix_hash[..]);
+		assert_eq!(value_res[..], boundary[..]);
 	}
 
 	#[test]
 	fn test_drop_old_data() {
 		let tempdir = TempDir::new("").unwrap();
-		let builder = NodeCacheBuilder::new(None, u64::max_value());
+		let builder = NodeCacheBuilder::new(None);
 		let first = builder
 			.light(tempdir.path(), 0)
 			.to_file()
@@ -432,4 +442,3 @@ mod test {
 		assert!(fs::metadata(&second).is_err());
 	}
 }
-

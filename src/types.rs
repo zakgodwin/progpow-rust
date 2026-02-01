@@ -8,7 +8,7 @@ pub enum Hardware {
 
 #[derive(Debug)]
 pub enum ProgPowError {
-	NO_INITIALIZED,
+	NoInitialized,
 	DAG,
 	CACHE,
 }
@@ -24,4 +24,3 @@ pub trait PpCompute: Sized {
 	) -> Result<([u32; 8], [u32; 8]), ProgPowError>;
 	fn compute(&self, header: [u8; 32], height: u64, epoch: i32, target: u64);
 }
-

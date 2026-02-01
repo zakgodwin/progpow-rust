@@ -11,21 +11,5 @@ num-traits = "0.2"
 byteorder = "1.5.0"
 lazy_static = "1"
 dirs = "1.0.3"
-progpow_cpu = { path = "./pp_light" }
-
-
-[build-dependencies]
-bindgen = "0.71.1"
-cmake = "0.1.50"
-filetime = "0.2.25"
-
-[dependencies.progpow_gpu]
-path = "./pp_full"
-optional = true
-
-[features]
-opencl = ["progpow_gpu", "progpow_gpu/opencl"]
-cuda = ["progpow_gpu", "progpow_gpu/cuda"]
-
-
-
+progpow_cpu = { package = "progpow-light", path = "../progpow-light" }
+progpow-base = { path = "../progpow-base" }
