@@ -121,7 +121,7 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 	// We use a placeholder XMRIG_INCLUDE_DEFINES to inject all dynamic defines
 	let is_zano = P::MATH_MAPPING == progpow_base::params::MathMapping::Zano;
 	let defines = format!(
-		"#define KAWPOW_IS_RAVENCOIN     {}\n#define PROGPOW_IS_ZANO         {}\n#define PROGPOW_CNT_CACHE       {}\n#define PROGPOW_CNT_MATH        {}",
+		"#define KAWPOW_IS_RAVENCOIN     {}\n#define PROGPOW_IS_ZANO         {}\n#define PROGPOW_CNT_CACHE       {}\n#define PROGPOW_CNT_MATH        {}\n#define PROGPOW_START_OFFSET    0",
 		if P::HAS_RAVENCOIN_RNDC { 1 } else { 0 },
 		if is_zano { 1 } else { 0 },
 		P::CNT_CACHE,
@@ -210,10 +210,14 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 
 	// Debug: Print shuffle sequences to verify they match CPU
 	println!("DEBUG GPU Generator: prog_seed={}", prog_seed);
-	println!("DEBUG GPU Generator: mix_seq_dst[0..4] = {} {} {} {}",
-		mix_seq_dst[0], mix_seq_dst[1], mix_seq_dst[2], mix_seq_dst[3]);
-	println!("DEBUG GPU Generator: mix_seq_cache[0..4] = {} {} {} {}",
-		mix_seq_cache[0], mix_seq_cache[1], mix_seq_cache[2], mix_seq_cache[3]);
+	println!(
+		"DEBUG GPU Generator: mix_seq_dst[0..4] = {} {} {} {}",
+		mix_seq_dst[0], mix_seq_dst[1], mix_seq_dst[2], mix_seq_dst[3]
+	);
+	println!(
+		"DEBUG GPU Generator: mix_seq_cache[0..4] = {} {} {} {}",
+		mix_seq_cache[0], mix_seq_cache[1], mix_seq_cache[2], mix_seq_cache[3]
+	);
 
 	let cnt_cache = P::CNT_CACHE;
 	let cnt_math = P::CNT_MATH;
@@ -604,18 +608,12 @@ DEV_INLINE void progPowLoop(const uint32_t loop, uint32_t mix[PROGPOW_REGS], con
 
     // global load
     offset = SHFL(mix[0], loop % PROGPOW_LANES, PROGPOW_LANES);
-    if (loop == 0 && (blockIdx.x * blockDim.x + threadIdx.x) == 0) {
-        printf("GPU DEBUG: loop 0 SHFL offset=%08x\n", offset);
-    }
 
     // OFFSET MOD LOGIC
     XMRIG_INCLUDE_OFFSET_MOD_DAG_ELEMENTS
 
     offset = offset * PROGPOW_LANES + (lane_id ^ loop) % PROGPOW_LANES;
     data_dag = g_dag[offset];
-    if (loop == 0 && (blockIdx.x * blockDim.x + threadIdx.x) == 0) {
-        printf("GPU DEBUG: round 0 offset=%08x data_dag.s[0]=%08x\n", offset, data_dag.s[0]);
-    }
 
     if (hack_false) __threadfence_block();
 
@@ -624,10 +622,6 @@ DEV_INLINE void progPowLoop(const uint32_t loop, uint32_t mix[PROGPOW_REGS], con
 
     // DAG data loads (merge data_dag into mix)
     XMRIG_INCLUDE_PROGPOW_DATA_LOADS
-
-    if ((blockIdx.x * blockDim.x + threadIdx.x) == 0 && loop < 4) {
-        printf("GPU DEBUG: loop %d end mix[0]=%08x [1]=%08x [2]=%08x [3]=%08x\n", loop, mix[0], mix[1], mix[2], mix[3]);
-    }
 }
 
 #define FNV_PRIME 0x1000193
@@ -813,9 +807,6 @@ __device__ __forceinline__ uint32_t kiss99(kiss99_t &st)
 XMRIG_INCLUDE_KISS99_LOGIC
 
     uint32_t res = ((MWC^st.jcong) + st.jsr);
-    if (threadIdx.x == 0 && (blockIdx.x * blockDim.x + threadIdx.x) == 0) {
-        printf("GPU KISS: z=%08x w=%08x jsr=%08x jcong=%08x mwc=%08x res=%08x\n", st.z, st.w, st.jsr, st.jcong, MWC, res);
-    }
     return res;
 }
 
@@ -828,7 +819,6 @@ __device__ __forceinline__ void fill_mix(uint32_t* hash_seed, uint32_t lane_id, 
     st.jsr = fnv1a_dev(st.w, lane_id);
     st.jcong = fnv1a_dev(st.jsr, lane_id);
     if (lane_id == 0 && (blockIdx.x * blockDim.x + threadIdx.x) == 0) {
-        printf("GPU DEBUG: st.z=%08x .w=%08x .jsr=%08x .jcong=%08x\n", st.z, st.w, st.jsr, st.jcong);
         if (g_debug_trace != NULL) {
              g_debug_trace[210] = st.z;
              g_debug_trace[211] = st.w;
@@ -893,17 +883,46 @@ extern "C" __global__ void progpow_search_v3(
     }
     __syncthreads();
 
-    if (gid == 0) {
-        printf("GPU DEBUG: h0_64=%016llx h1_64=%016llx h2_64=%016llx h3_64=%016llx\n", h0_64, h1_64, h2_64, h3_64);
-        printf("GPU DEBUG: start_nonce=%016llx target=%016llx\n", start_nonce, target);
-        printf("GPU DEBUG: g_dag=%p c_cache=%p g_output=%p g_debug_trace=%p\n", g_dag, c_cache, g_output, g_debug_trace);
-    }
-
     uint64_t nonce = start_nonce + nonce_id;
 
     uint32_t mix[PROGPOW_REGS];
     uint32_t hash_seed[4];
     uint32_t state2[8];
+
+    // Debug: Dump kernel arguments (gid 0)
+    if (gid == 0 && g_debug_trace != NULL) {
+        // 500: Header (h0_64) - First 8 bytes instead of pointer
+        g_debug_trace[500] = (uint32_t)h0_64;
+        g_debug_trace[501] = (uint32_t)(h0_64 >> 32);
+
+        // 502: DAG Ptr
+        uint64_t dag_val = (uint64_t)g_dag;
+        g_debug_trace[502] = (uint32_t)dag_val;
+        g_debug_trace[503] = (uint32_t)(dag_val >> 32);
+
+        // 504: Cache Ptr
+        uint64_t cache_val = (uint64_t)c_cache;
+        g_debug_trace[504] = (uint32_t)cache_val;
+        g_debug_trace[505] = (uint32_t)(cache_val >> 32);
+
+        // 506: Start Nonce
+        g_debug_trace[506] = (uint32_t)start_nonce;
+        g_debug_trace[507] = (uint32_t)(start_nonce >> 32);
+
+        // 508: Target
+        g_debug_trace[508] = (uint32_t)target;
+        g_debug_trace[509] = (uint32_t)(target >> 32);
+
+        // 514: Output Ptr
+        uint64_t out_val = (uint64_t)g_output;
+        g_debug_trace[514] = (uint32_t)out_val;
+        g_debug_trace[515] = (uint32_t)(out_val >> 32);
+
+        // 516: Debug Ptr
+        uint64_t dbg_val = (uint64_t)g_debug_trace;
+        g_debug_trace[516] = (uint32_t)dbg_val;
+        g_debug_trace[517] = (uint32_t)(dbg_val >> 32);
+    }
 
     {
         // Initial state
@@ -915,6 +934,11 @@ extern "C" __global__ void progpow_search_v3(
 
         state[8] = (uint32_t)nonce;
         state[9] = (uint32_t)(nonce >> 32);
+
+        if (gid == 0 && g_debug_trace != NULL) {
+             // for(int i=0; i<8; i++) g_debug_trace[100+i] = state[i]; // Trace initial state (header)
+        }
+
 
 XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
 
@@ -929,16 +953,12 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
         hash_seed[1] = hash_seed_small[1];
     }
     if (gid == 0) {
-        printf("GPU DEBUG: hash_seed[0]=%08x [1]=%08x\n", hash_seed[0], hash_seed[1]);
         if (g_debug_trace != NULL) {
             g_debug_trace[200] = hash_seed[0];
             g_debug_trace[201] = hash_seed[1];
         }
     }
     fill_mix(hash_seed, lane_id, mix, g_debug_trace);
-    if (gid == 0) {
-        printf("GPU DEBUG: Mix after fill_mix [0]=%08x [1]=%08x\n", mix[0], mix[1]);
-    }
 
     if (gid == 0 && g_debug_trace != NULL) {
         // Trace Mix Init (Offset 32)
@@ -972,11 +992,6 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
         digest.uint32s[i] = res;
     }
 
-    if (gid == 0) {
-        printf("GPU DEBUG: Final mix_hash[0..3] = %08x %08x %08x %08x\n",
-                 digest.uint32s[0], digest.uint32s[1], digest.uint32s[2], digest.uint32s[3]);
-    }
-
     uint64_t result;
     {
         uint32_t final_state[25];
@@ -1007,16 +1022,14 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
         for (int i = 10; i < 18; i++) final_state[i] = digest.uint32s[i - 10];
 #endif
 
-        if (gid == 0) {
-            printf("GPU DEBUG: Mix[0]=%08x [1]=%08x [2]=%08x [3]=%08x\n", mix[0], mix[1], mix[2], mix[3]);
-        }
-
         keccak_f800(final_state);
         // KawPoW: The 64-bit result for target comparison is the first 8 bytes of the hash
         // as a big-endian integer to match CPU verifier.
         result = ((uint64_t)cuda_swab32(final_state[0]) << 32) | (uint64_t)cuda_swab32(final_state[1]);
 
         if (gid == 0 && g_debug_trace != NULL) {
+             // Optional trace logic can stay if guarded by explicit non-null check, but user asked to chill output.
+             // We'll keep the g_debug_trace writes as they are silent, but remove printf.
              for(int i=0; i<25; i++) g_debug_trace[64+i] = final_state[i];
              g_debug_trace[90] = (uint32_t)(result >> 32);
              g_debug_trace[91] = (uint32_t)result;
