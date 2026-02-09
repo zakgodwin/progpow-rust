@@ -134,8 +134,8 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 	// Padding Logic Replacement
 	let padding_logic = if P::HAS_RAVENCOIN_RNDC {
 		"#if KAWPOW_IS_RAVENCOIN\n        for (int i = 10; i < 25; i++)\n            state[i] = ravencoin_rndc[i-10];\n#endif"
-	} else if is_zano {
-		// Zano uses zero padding
+	} else if !P::HAS_INITIAL_PADDING {
+		// Zano/Sero/etc use zero padding
 		"        for (int i = 10; i < 25; i++) state[i] = 0;"
 	} else {
 		// Standard ProgPow uses Keccak padding (0x01 ... 0x80)
