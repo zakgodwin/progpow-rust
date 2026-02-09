@@ -160,8 +160,8 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 	code = code.replace("XMRIG_INCLUDE_KISS99_LOGIC", kiss99_logic);
 
 	// KawPow/Standard ProgPow: direct extraction, no swap (per cpp-kawpow reference)
-	// Zano: swap bytes and reverse order (BE conversion per zano reference)
-	let hash_seed_extract = if is_zano {
+	// Zano/Sero: swap bytes and reverse order (BE conversion)
+	let hash_seed_extract = if P::SEED_BYTE_SWAP {
 		// Zano uses be::uint64(h.word64s[0]) which is bswap64 on LE systems
 		// This swaps bytes AND reverses word order (index 1 then 0, not 0 then 1)
 		// Must match CPU: h_seed = [st_initial[1].swap_bytes(), st_initial[0].swap_bytes()]
