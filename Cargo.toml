@@ -13,3 +13,8 @@ lazy_static = "1"
 dirs = "1.0.3"
 progpow_cpu = { package = "progpow-light", path = "../progpow-light" }
 progpow-base = { path = "../progpow-base" }
+
+[features]
+default = []
+cuda = []
+opencl = []

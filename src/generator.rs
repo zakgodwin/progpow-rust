@@ -69,7 +69,7 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 	code = code.replace("XMRIG_INCLUDE_PROGPOW_DATA_LOADS", &dag_loads);
 
 	// Calculate Fast Modulo Data
-	println!("DEBUG: generate_cuda_kernel dag_elements={}", dag_elements);
+	// println!("DEBUG: generate_cuda_kernel dag_elements={}", dag_elements);
 	let mut mod_logic = String::new();
 	if (dag_elements & (dag_elements - 1)) == 0 {
 		// Power of two optimization
@@ -96,7 +96,7 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 		}
 	}
 
-	println!("GENERATED MOD LOGIC:\n{}", mod_logic);
+	// println!("GENERATED MOD LOGIC:\n{}", mod_logic);
 	code = code.replace("XMRIG_INCLUDE_OFFSET_MOD_DAG_ELEMENTS", &mod_logic);
 
 	// Launch bounds (Hardcoded to 256 threads as per typical usage, or parameterized if needed)
@@ -120,37 +120,58 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 	// Inject Constants derived from params
 	// We use a placeholder XMRIG_INCLUDE_DEFINES to inject all dynamic defines
 	let is_zano = P::MATH_MAPPING == progpow_base::params::MathMapping::Zano;
+	let is_firo = P::NAME == "FiroPow";
+	let has_final_padding = P::NAME == "ProgPow" || P::NAME == "EpicProgPow";
 	let defines = format!(
-		"#define KAWPOW_IS_RAVENCOIN     {}\n#define PROGPOW_IS_ZANO         {}\n#define PROGPOW_CNT_CACHE       {}\n#define PROGPOW_CNT_MATH        {}\n#define PROGPOW_START_OFFSET    0",
+		"#define KAWPOW_IS_RAVENCOIN       {}\n#define KAWPOW_IS_MEOWCOIN        {}\n#define KAWPOW_IS_EVRMORE         {}\n#define PROGPOW_IS_ZANO           {}\n#define PROGPOW_IS_FIRO           {}\n#define PROGPOW_IS_SERO           {}\n#define PROGPOW_HAS_FINAL_PADDING {}\n#define PROGPOW_CNT_CACHE         {}\n#define PROGPOW_CNT_MATH          {}\n#define PROGPOW_REGS              {}\n#define PROGPOW_START_OFFSET      0",
 		if P::HAS_RAVENCOIN_RNDC { 1 } else { 0 },
+		if P::HAS_MEOWCOIN_RNDC { 1 } else { 0 },
+		if P::HAS_EVRMORE_RNDC { 1 } else { 0 },
 		if is_zano { 1 } else { 0 },
+		if is_firo { 1 } else { 0 },
+		if P::NAME == "SeroProgPow" { 1 } else { 0 },
+		if has_final_padding { 1 } else { 0 },
 		P::CNT_CACHE,
-		P::CNT_MATH
+		P::CNT_MATH,
+		P::REGS
 	);
 	code = code.replace("XMRIG_INCLUDE_DEFINES", &defines);
-	println!("GENERATED DEFINES:\n{}", defines);
+	// println!("GENERATED DEFINES:\n{}", defines);
 
 	code = code.replace("XMRIG_INCLUDE_KECCAK_ROUNDS", &P::KECCAK_ROUNDS.to_string());
 	// Padding Logic Replacement
+	// Padding Logic Replacement
 	let padding_logic = if P::HAS_RAVENCOIN_RNDC {
 		"#if KAWPOW_IS_RAVENCOIN\n        for (int i = 10; i < 25; i++)\n            state[i] = ravencoin_rndc[i-10];\n#endif"
+			.to_string()
+	} else if P::HAS_MEOWCOIN_RNDC {
+		"#if KAWPOW_IS_MEOWCOIN\n        for (int i = 10; i < 25; i++)\n            state[i] = meowcoin_rndc[i-10];\n#endif"
+			.to_string()
+	} else if P::HAS_EVRMORE_RNDC {
+		"#if KAWPOW_IS_EVRMORE\n        for (int i = 10; i < 25; i++)\n            state[i] = evrmore_rndc[i-10];\n#endif"
+			.to_string()
 	} else if !P::HAS_INITIAL_PADDING {
 		// Zano/Sero/etc use zero padding
-		"        for (int i = 10; i < 25; i++) state[i] = 0;"
+		"        for (int i = 10; i < 25; i++) state[i] = 0;".to_string()
 	} else {
-		// Standard ProgPow uses Keccak padding (0x01 ... 0x80)
-		"        for (int i = 10; i < 25; i++) state[i] = 0;\n        state[10] = 0x00000001;\n        state[18] = 0x80008081;"
+		// Standard ProgPow uses Keccak padding (0x01 ... 0x80) with domain bit
+		format!(
+			"        for (int i = 10; i < 25; i++) state[i] = 0;\n        state[10] = 0x00000001 | ({} << 8);\n        state[18] = 0x80008081;",
+			P::KECCAK_DOMAIN
+		)
 	};
 
-	println!("GENERATED PADDING LOGIC:\n{}", padding_logic);
-	code = code.replace("XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING", padding_logic);
+	// println!("GENERATED PADDING LOGIC:\n{}", padding_logic);
+	code = code.replace("XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING", &padding_logic);
 
-	let is_zano = P::MATH_MAPPING == progpow_base::params::MathMapping::Zano;
+	// let is_zano = P::MATH_MAPPING == progpow_base::params::MathMapping::Zano;
+	/*
 	println!(
 		"DEBUG: generate_cuda_kernel is_zano={} NAME={}",
 		is_zano,
 		P::NAME
 	);
+	*/
 	let kiss99_logic = r#"
     st.jcong = 69069 * st.jcong + 1234567;
     st.jsr ^= (st.jsr << 17);
@@ -172,7 +193,7 @@ pub fn generate_cuda_kernel<P: ProgPowParams>(period: u64, _height: u64) -> Stri
 		r#"    hash_seed_small[0] = state2[0];
     hash_seed_small[1] = state2[1];"#
 	};
-	println!("DEBUG: hash_seed_extract = {}", hash_seed_extract);
+	// println!("DEBUG: hash_seed_extract = {}", hash_seed_extract);
 	code = code.replace("XMRIG_INCLUDE_HASH_SEED_EXTRACT", hash_seed_extract);
 
 	code
@@ -196,18 +217,22 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 	let jcong = fnv1a(&mut h, seed1);
 	let mut rng = Kiss99::new(z, w, jsr, jcong);
 
-	let mut mix_seq_dst = (0..PROGPOW_REGS).map(|i| i as i32).collect::<Vec<i32>>();
-	let mut mix_seq_cache = (0..PROGPOW_REGS).map(|i| i as i32).collect::<Vec<i32>>();
+	let regs = P::REGS;
+	let mut mix_seq_dst = (0..regs).map(|i| i as i32).collect::<Vec<i32>>();
+	let mut mix_seq_cache = (0..regs).map(|i| i as i32).collect::<Vec<i32>>();
 	let mut mix_seq_dst_cnt = 0;
 	let mut mix_seq_cache_cnt = 0;
 
-	for i in (1..PROGPOW_REGS).rev() {
-		let j = (rng.rnd(is_zano) as usize) % (i + 1);
-		mix_seq_dst.swap(i, j);
-		let j = (rng.rnd(is_zano) as usize) % (i + 1);
-		mix_seq_cache.swap(i, j);
+	if P::HAS_KISS99_SHUFFLE {
+		for i in (1..regs).rev() {
+			let j = (rng.rnd(is_zano) as usize) % (i + 1);
+			mix_seq_dst.swap(i, j);
+			let j = (rng.rnd(is_zano) as usize) % (i + 1);
+			mix_seq_cache.swap(i, j);
+		}
 	}
 
+	/*
 	// Debug: Print shuffle sequences to verify they match CPU
 	println!("DEBUG GPU Generator: prog_seed={}", prog_seed);
 	println!(
@@ -218,6 +243,7 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 		"DEBUG GPU Generator: mix_seq_cache[0..4] = {} {} {} {}",
 		mix_seq_cache[0], mix_seq_cache[1], mix_seq_cache[2], mix_seq_cache[3]
 	);
+	*/
 
 	let cnt_cache = P::CNT_CACHE;
 	let cnt_math = P::CNT_MATH;
@@ -225,9 +251,9 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 
 	for i in 0..max_ops {
 		if i < cnt_cache {
-			let src = format!("mix[{}]", mix_seq_cache[mix_seq_cache_cnt % PROGPOW_REGS]);
+			let src = format!("mix[{}]", mix_seq_cache[mix_seq_cache_cnt % regs]);
 			mix_seq_cache_cnt += 1;
-			let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % PROGPOW_REGS]);
+			let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % regs]);
 			mix_seq_dst_cnt += 1;
 			let r = rng.rnd(is_zano);
 
@@ -238,9 +264,9 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 		}
 
 		if i < cnt_math {
-			let src_rnd = (rng.rnd(is_zano) as usize) % ((PROGPOW_REGS - 1) * PROGPOW_REGS);
-			let src1 = src_rnd % PROGPOW_REGS;
-			let mut src2 = src_rnd / PROGPOW_REGS;
+			let src_rnd = (rng.rnd(is_zano) as usize) % ((regs - 1) * regs);
+			let src1 = src_rnd % regs;
+			let mut src2 = src_rnd / regs;
 			if src2 >= src1 {
 				src2 += 1;
 			}
@@ -249,7 +275,7 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 			let src2_str = format!("mix[{}]", src2);
 			let r1 = rng.rnd(is_zano);
 
-			let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % PROGPOW_REGS]);
+			let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % regs]);
 			mix_seq_dst_cnt += 1;
 			let r2 = rng.rnd(is_zano);
 
@@ -261,15 +287,15 @@ fn get_code<P: ProgPowParams>(prog_seed: u64) -> (String, String) {
 
 	// DAG Loads
 	dag_loads.push_str(&merge("mix[0]", "data_dag.s[0]", rng.rnd(is_zano)));
-	for i in 1..PROGPOW_DAG_LOADS {
-		let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % PROGPOW_REGS]);
+	for i in 1..P::DAG_LOADS {
+		let dest = format!("mix[{}]", mix_seq_dst[mix_seq_dst_cnt % regs]);
 		mix_seq_dst_cnt += 1;
 		let r = rng.rnd(is_zano);
 		dag_loads.push_str(&merge(&dest, &format!("data_dag.s[{}]", i), r));
 	}
 
-	println!("GENERATED RANDOM MATH:\n{}", random_math);
-	println!("GENERATED DAG LOADS:\n{}", dag_loads);
+	// println!("GENERATED RANDOM MATH:\n{}", random_math);
+	// println!("GENERATED DAG LOADS:\n{}", dag_loads);
 	(random_math, dag_loads)
 }
 
@@ -592,7 +618,7 @@ typedef struct {
 #endif
 
 #define PROGPOW_LANES           16
-#define PROGPOW_REGS            32
+// PROGPOW_REGS is injected by XMRIG_INCLUDE_DEFINES
 #define PROGPOW_DAG_LOADS       4
 #define PROGPOW_CACHE_WORDS     4096
 #define PROGPOW_CNT_DAG         64
@@ -642,10 +668,20 @@ __device__ __constant__ const uint32_t keccakf_rndc[24] = {
 
 
 __device__ __constant__ const uint32_t ravencoin_rndc[15] = {
-        0x00000072, 0x00000041, 0x00000056, 0x00000045, 0x0000004E,
-        0x00000043, 0x0000004F, 0x00000049, 0x0000004E,
-        0x0000004B, 0x00000041, 0x00000057,
-        0x00000050, 0x0000004F, 0x00000057
+    0x00000072, 0x00000041, 0x00000056, 0x00000045, // rAVE
+    0x0000004E, 0x00000043, 0x0000004F, 0x00000049, // NCOI
+    0x0000004E, 0x0000004B, 0x00000041, 0x00000057, // NKAW
+    0x00000050, 0x0000004F, 0x00000057              // POW
+};
+
+__device__ __constant__ const uint32_t meowcoin_rndc[15] = {
+    0x0000004D, 0x00000045, 0x0000004F, 0x00000057, 0x00000043, 0x0000004F, 0x00000049, 0x0000004E,
+    0x0000004D, 0x00000045, 0x0000004F, 0x00000057, 0x00000050, 0x0000004F, 0x00000057
+};
+
+__device__ __constant__ const uint32_t evrmore_rndc[15] = {
+    0x00000065, 0x00000076, 0x00000072, 0x0000006D, 0x0000006F, 0x00000072, 0x00000065, 0x00000000,
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
 };
 
 
@@ -886,8 +922,8 @@ extern "C" __global__ void progpow_search_v3(
     uint64_t nonce = start_nonce + nonce_id;
 
     uint32_t mix[PROGPOW_REGS];
-    uint32_t hash_seed[4];
-    uint32_t state2[8];
+    uint32_t hash_seed[2];
+    uint32_t state2[16];
 
     // Debug: Dump kernel arguments (gid 0)
     if (gid == 0 && g_debug_trace != NULL) {
@@ -944,7 +980,7 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
 
         keccak_f800(state);
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 16; i++)
             state2[i] = state[i];
 
         uint32_t hash_seed_small[2];
@@ -998,30 +1034,47 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
         for (int i = 0; i < 25; i++) final_state[i] = 0;
 
 #if KAWPOW_IS_RAVENCOIN
-        for (int i = 0; i < 8; i++)
-            final_state[i] = state2[i];
-        for (int i = 8; i < 16; i++)
-            final_state[i] = digest.uint32s[i - 8];
-        for (int i = 16; i < 25; i++)
-            final_state[i] = ravencoin_rndc[i - 16]; // Corrected: Words 16-24 of state = Padding words 0-8
-#else
-        // Zano / Standard ProgPow
+        // Reference: cpp-kawpow/lib/ethash/progpow.cpp
+        // state[0..7]   = state2 (carry-over from initial keccak)
+        // state[8..15]  = mix_hash (digest)
+        // state[16..24] = ravencoin_kawpow[0..8] (9 personalization words)
+        for (int i = 0; i < 8; i++) final_state[i] = state2[i];
+        for (int i = 0; i < 8; i++) final_state[8 + i] = digest.uint32s[i];
+        for (int i = 0; i < 9; i++) final_state[16 + i] = ravencoin_rndc[i];
+#elif KAWPOW_IS_MEOWCOIN
+        // MeowPow: state[0..7] = initial_state_words, state[8..15] = mix, state[16..24] = personalization[0..8]
+        // NOTE: Meowcoin DOES NOT include the nonce!
         for (int i = 0; i < 8; i++) final_state[i] = header_hash[i];
-
+        for (int i = 0; i < 8; i++) final_state[8 + i] = digest.uint32s[i];
+        for (int i = 0; i < 9; i++) final_state[16 + i] = meowcoin_rndc[i];
+#elif KAWPOW_IS_EVRMORE
+        for (int i = 0; i < 8; i++) final_state[i] = header_hash[i];
+        final_state[8] = (uint32_t)nonce;
+        final_state[9] = (uint32_t)(nonce >> 32);
+        for (int i = 0; i < 8; i++) final_state[10 + i] = digest.uint32s[i];
+        for (int i = 0; i < 7; i++) final_state[18 + i] = evrmore_rndc[i];
+#elif PROGPOW_IS_FIRO
+        // FiroPow: seed_hash (16 words) + mix (8 words) + padding (1 word)
+        for (int i = 0; i < 16; i++) final_state[i] = state2[i];
+        for (int i = 0; i < 8; i++) final_state[16 + i] = digest.uint32s[i];
+        final_state[24] = 0x80000001;
+#else
+        // Standard ProgPow / Zano / Epic / Sero: header + nonce/seed + mix
+        for (int i = 0; i < 8; i++) final_state[i] = header_hash[i];
 #if PROGPOW_IS_ZANO
-        // Zano: seed is bswap64 of state2 - same transformation as hash_seed
-        // Reference: zano keccak_progpow_256(header, seed, mix)
         final_state[8] = cuda_swab32(state2[1]);
         final_state[9] = cuda_swab32(state2[0]);
 #else
-        // Standard ProgPow uses nonce (or state2 directly)
         final_state[8] = state2[0];
         final_state[9] = state2[1];
 #endif
-
         for (int i = 10; i < 18; i++) final_state[i] = digest.uint32s[i - 10];
-#endif
 
+        #if PROGPOW_HAS_FINAL_PADDING
+        final_state[18] = 0x00000001;
+        final_state[24] = 0x80008081;
+        #endif
+#endif
         keccak_f800(final_state);
         // KawPoW: The 64-bit result for target comparison is the first 8 bytes of the hash
         // as a big-endian integer to match CPU verifier.
@@ -1210,12 +1263,7 @@ __kernel void progpow_search(
             // 88: Target
             v = target; g_debug_trace[88] = (uint32_t)v; g_debug_trace[89] = (uint32_t)(v>>32);
 
-            printf("GPU Header Ptr: %p\n", header);
 
-            // Also printf for immediate feedback
-            printf("GPU Header: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-                state[0], state[1], state[2], state[3],
-                state[4], state[5], state[6], state[7]);
         }
 
         state[8] = (uint)nonce;
@@ -1255,32 +1303,51 @@ __kernel void progpow_search(
 
     digest = digest_temp;
 
-    ulong result;
     {
         uint state[25];
-#if KAWPOW_IS_RAVENCOIN
-        for (int i = 0; i < 8; i++)
-            state[i] = state2[i];
-        for (int i = 8; i < 16; i++)
-            state[i] = digest.uint32s[i - 8];
-        for (int i = 16; i < 25; i++)
-            state[i] = ravencoin_rndc[i - 16];
-#else
-        // Zano Style Finalization
-        for(int i=0; i<8; i++) state[i] = header_hash[i];
-        state[8] = state2[0];
-        state[9] = state2[1];
+        // 1. Initial State (256 bits)
+        for(int i=0; i<8; i++) state[i] = state2[i];
 
-        for(int i=10; i<18; i++) state[i] = digest.uint32s[i-10];
-#endif
+        // 2. Mix Hash (256 bits)
+        for(int i=0; i<8; i++) state[8+i] = digest.uint32s[i];
+
+        // 3. Personalization
+        #if KAWPOW_IS_RAVENCOIN
+            for(int i=0; i<9; i++) state[16+i] = ravencoin_rndc[i];
+        #elif KAWPOW_IS_MEOWCOIN
+            for(int i=0; i<9; i++) state[16+i] = meowcoin_rndc[i];
+        #elif KAWPOW_IS_EVRMORE
+            for(int i=0; i<9; i++) state[16+i] = evrmore_rndc[i];
+        #else
+            // Zero padding or other coins
+            for(int i=16; i<25; i++) state[i] = 0;
+        if (gid == 0) {
+            printf("GPU Final Input st[0]: %08x st[8]: %08x st[10]: %08x\n", state[0], state[8], state[10]);
+        }
+
         keccak_f800(state);
 
-        // OpenCL Byte verification
-        uint s0 = state[0];
-        uint s1 = state[1];
-        uint b0 = ((s0 >> 24) & 0xff) | ((s0 >> 8) & 0xff00) | ((s0 << 8) & 0xff0000) | ((s0 << 24) & 0xff000000);
-        uint b1 = ((s1 >> 24) & 0xff) | ((s1 >> 8) & 0xff00) | ((s1 << 8) & 0xff0000) | ((s1 << 24) & 0xff000000);
-        result = (ulong)b0 << 32 | b1;
+        if (gid == 0) {
+            printf("GPU Final Output st[0]: %08x\n", state[0]);
+        }s
+
+        // Result Construction (Big Endian for Target Check)
+        // Swap bytes of first two words to form Big Endian u64
+        // Logic: Low Address (Word 0) is Higher Significance in Target?
+        // Usually Target is Big Endian Hex String.
+        // HASH: [00 00 00 02 ...] (LE Memory) -> Word 0 = 0x02000000.
+        // Swap(Word 0) = 0x00000002.
+        // We want Swap(Word 0) << 32 | Swap(Word 1).
+
+        uint t0 = ((state[0] >> 24) & 0xff) | ((state[0] >> 8) & 0xff00) | ((state[0] << 8) & 0xff0000) | ((state[0] << 24) & 0xff000000);
+        uint t1 = ((state[1] >> 24) & 0xff) | ((state[1] >> 8) & 0xff00) | ((state[1] << 8) & 0xff0000) | ((state[1] << 24) & 0xff000000);
+
+        result = ((ulong)t0 << 32) | t1;
+
+        // Debugging Final State if trace enabled (very expensive, only for single thread?)
+        // if (gid == 0 && g_debug_trace != NULL) {
+        //    for(int i=0; i<8; i++) g_debug_trace[96+i] = state[i];
+        // }
     }
 
     if (result <= target)
@@ -1295,5 +1362,4 @@ __kernel void progpow_search(
             }
         }
     }
-}
 "#;
