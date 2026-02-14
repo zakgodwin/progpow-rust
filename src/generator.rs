@@ -1042,9 +1042,10 @@ XMRIG_INCLUDE_PROGPOW_INITIAL_PADDING
         for (int i = 0; i < 8; i++) final_state[8 + i] = digest.uint32s[i];
         for (int i = 0; i < 9; i++) final_state[16 + i] = ravencoin_rndc[i];
 #elif KAWPOW_IS_MEOWCOIN
-        // MeowPow: state[0..7] = initial_state_words, state[8..15] = mix, state[16..24] = personalization[0..8]
-        // NOTE: Meowcoin DOES NOT include the nonce!
-        for (int i = 0; i < 8; i++) final_state[i] = header_hash[i];
+        // MeowPow: state[0..7] = state2 (initial Keccak output), state[8..15] = mix, state[16..24] = personalization
+        // NOTE: Meowcoin uses the absorbed Keccak state (state2), NOT raw header_hash!
+        // Same as Ravencoin but without nonce in final state.
+        for (int i = 0; i < 8; i++) final_state[i] = state2[i];
         for (int i = 0; i < 8; i++) final_state[8 + i] = digest.uint32s[i];
         for (int i = 0; i < 9; i++) final_state[16 + i] = meowcoin_rndc[i];
 #elif KAWPOW_IS_EVRMORE
